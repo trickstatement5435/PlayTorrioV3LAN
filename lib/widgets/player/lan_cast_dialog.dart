@@ -438,6 +438,10 @@ class _LanCastDialogState extends State<LanCastDialog> {
               ),
             ],
           ),
+          const Text(
+            'This link stays the same every time you share, even for other shows.',
+            style: TextStyle(color: PlayerTheme.inkMuted, fontSize: 11.5),
+          ),
           const SizedBox(height: 10),
           if (eps.isEmpty)
             const Text('No network address found.', style: TextStyle(color: PlayerTheme.warning, fontSize: 12.5))
@@ -454,12 +458,35 @@ class _LanCastDialogState extends State<LanCastDialog> {
               children: [
                 _miniButton(Icons.playlist_play_rounded, 'Copy .m3u link', () => _copy(eps.first.playlistUrl, 'Playlist link')),
                 _miniButton(Icons.language_rounded, 'Copy web page link', () => _copy(eps.first.pageUrl, 'Page link')),
+                _miniButton(Icons.autorenew_rounded, 'Make new link', _confirmResetLink),
               ],
             ),
           ],
         ],
       ),
     );
+  }
+
+  Future<void> _confirmResetLink() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF151A24),
+        title: const Text('Make a new link?', style: TextStyle(color: PlayerTheme.ink, fontSize: 16)),
+        content: const Text(
+          'The old link stops working, so anything saved in VLC will need the new one.',
+          style: TextStyle(color: PlayerTheme.inkMuted, fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('New link', style: TextStyle(color: PlayerTheme.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await _svc.resetLink();
   }
 
   Widget _urlRow(String url, String? iface, {required bool primary}) {

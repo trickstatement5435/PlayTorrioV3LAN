@@ -169,6 +169,7 @@ class LanCastService {
   static const _prefFfmpegPath = 'lan_cast_ffmpeg_path';
   static const _prefStartMode = 'lan_cast_start_mode';
   static const _prefPauseLocal = 'lan_cast_pause_local';
+  static const _prefToken = 'lan_cast_token';
 
   final ValueNotifier<LanCastStatus> status = ValueNotifier(const LanCastStatus());
 
@@ -300,11 +301,20 @@ class LanCastService {
     }
 
     if (found != null) {
+      // Sanity-check the binary, but don't reject it just for being slow:
+      // on Windows the first launch of a big unsigned exe can sit behind an
+      // antivirus scan for a long time. Only a real failure disqualifies it.
       try {
         final r = await Process.run(found, ['-hide_banner', '-version'])
-            .timeout(const Duration(seconds: 8));
-        if (r.exitCode != 0) found = null;
-      } catch (_) {
+            .timeout(const Duration(seconds: 45));
+        if (r.exitCode != 0) {
+          debugPrint('[LanCast] $found -version exited ${r.exitCode}: ${r.stderr}');
+          found = null;
+        }
+      } on TimeoutException {
+        debugPrint('[LanCast] $found -version timed out; assuming it works');
+      } catch (e) {
+        debugPrint('[LanCast] could not run $found: $e');
         found = null;
       }
     }
@@ -312,6 +322,37 @@ class LanCastService {
     _ffmpegCacheKey = key;
     _ffmpegCache = found;
     return found;
+  }
+
+  /// ffprobe usually ships next to ffmpeg; used by the web player to read
+  /// duration, codecs and audio tracks.
+  Future<String?> findFfprobe([String? ffmpegOverride]) async {
+    final ff = await findFfmpeg(ffmpegOverride);
+    if (ff == null) return null;
+    final exe = Platform.isWindows ? 'ffprobe.exe' : 'ffprobe';
+    final sibling = '${File(ff).parent.path}${Platform.pathSeparator}$exe';
+    if (File(sibling).existsSync()) return sibling;
+    try {
+      final r = await Process.run(Platform.isWindows ? 'where' : 'which', ['ffprobe']);
+      if (r.exitCode == 0) {
+        final line = r.stdout.toString().split(RegExp(r'[\r\n]+')).firstWhere(
+              (l) => l.trim().isNotEmpty,
+              orElse: () => '',
+            );
+        if (line.trim().isNotEmpty) return line.trim();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// The FFmpeg path saved in the LAN settings (may be empty).
+  Future<String> savedFfmpegPath() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      return p.getString(_prefFfmpegPath) ?? '';
+    } catch (_) {
+      return '';
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -368,7 +409,7 @@ class LanCastService {
     if (_server == null || _requestedPort != port) {
       await _closeServer();
       _requestedPort = port;
-      _token = _randomToken();
+      _token = await _loadOrCreateToken();
       try {
         _server = await HttpServer.bind(InternetAddress.anyIPv4, port, shared: false);
       } on SocketException catch (e) {
@@ -468,6 +509,35 @@ class LanCastService {
   // Networking helpers
   // ─────────────────────────────────────────────────────────────────────────
 
+  /// The link token is saved so the URL stays the same across shows, app
+  /// restarts and reboots. VLC can keep it in its recent list for good.
+  Future<String> _loadOrCreateToken() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final saved = p.getString(_prefToken);
+      if (saved != null && RegExp(r'^[a-z0-9]{6,32}$').hasMatch(saved)) return saved;
+      final t = _randomToken();
+      await p.setString(_prefToken, t);
+      return t;
+    } catch (_) {
+      return _randomToken();
+    }
+  }
+
+  /// Makes a brand-new link, cutting off anyone using the old one.
+  Future<void> resetLink() async {
+    final t = _randomToken();
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_prefToken, t);
+    } catch (_) {}
+    if (!isRunning) return;
+    _token = t;
+    _killEncoders();
+    final endpoints = await _buildEndpoints(_server!.port);
+    status.value = status.value.copyWith(endpoints: endpoints);
+  }
+
   static String _randomToken() {
     const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
     final r = Random.secure();
@@ -484,21 +554,33 @@ class LanCastService {
     return false;
   }
 
-  Future<List<LanCastEndpoint>> _buildEndpoints(int port) async {
-    final result = <LanCastEndpoint>[];
+  static const _vpnNameHints = [
+    'wireguard', 'surfshark', 'nordlynx', 'nordvpn', 'proton', 'mullvad',
+    'expressvpn', 'openvpn', 'tap-windows', 'tap-', 'wintun', 'pia', 'cyberghost',
+    'windscribe', 'vpn', 'wg', 'tun', 'utun', 'ppp', 'ipsec',
+  ];
+
+  /// This machine's LAN IPv4 addresses, best first, as (adapterName, address).
+  /// VPN tunnels and virtual adapters are left out: other devices at home
+  /// can't reach them, and listing them only causes confusion.
+  static Future<List<(String, String)>> lanAddresses() async {
+    final result = <(String, String)>[];
     try {
       final ifaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
         includeLoopback: false,
         includeLinkLocal: false,
       );
-      final scored = <(int, NetworkInterface, InternetAddress)>[];
+      final scored = <(int, String, String)>[];
       for (final i in ifaces) {
         final n = i.name.toLowerCase();
-        // Skip virtual adapters that other machines can't reach.
         if (n.contains('docker') || n.startsWith('br-') || n.startsWith('veth') ||
             n.contains('vmnet') || n.contains('virtualbox') || n.contains('vbox') ||
             n.contains('wsl') || n.contains('hyper-v') || n.contains('vethernet')) {
+          continue;
+        }
+        final isMesh = n.contains('tailscale') || n.contains('zerotier');
+        if (!isMesh && _vpnNameHints.any((h) => n == h || n.startsWith(h) || (h.length > 3 && n.contains(h)))) {
           continue;
         }
         for (final a in i.addresses) {
@@ -511,26 +593,31 @@ class LanCastService {
               n.startsWith('en') || n.startsWith('eth') || n.contains('ethernet')) {
             score += 5;
           }
-          if (n.contains('tailscale') || n.contains('zerotier') || n.startsWith('tun') ||
-              n.startsWith('utun') || n.contains('vpn')) {
-            score -= 15;
-          }
-          scored.add((score, i, a));
+          if (isMesh) score -= 15;
+          scored.add((score, i.name, a.address));
         }
       }
       scored.sort((x, y) => y.$1.compareTo(x.$1));
-      for (final (_, iface, addr) in scored) {
-        final base = 'http://${addr.address}:$port/$_token';
-        result.add(LanCastEndpoint(
-          interfaceName: iface.name,
-          address: addr.address,
-          streamUrl: '$base/${_streamPath()}',
-          playlistUrl: '$base/playlist.m3u',
-          pageUrl: '$base/',
-        ));
+      for (final (_, name, addr) in scored) {
+        result.add((name, addr));
       }
     } catch (e) {
       debugPrint('[LanCast] could not list interfaces: $e');
+    }
+    return result;
+  }
+
+  Future<List<LanCastEndpoint>> _buildEndpoints(int port) async {
+    final result = <LanCastEndpoint>[];
+    for (final (name, addr) in await lanAddresses()) {
+      final base = 'http://$addr:$port/$_token';
+      result.add(LanCastEndpoint(
+        interfaceName: name,
+        address: addr,
+        streamUrl: '$base/${_streamPath()}',
+        playlistUrl: '$base/playlist.m3u',
+        pageUrl: '$base/',
+      ));
     }
     return result;
   }

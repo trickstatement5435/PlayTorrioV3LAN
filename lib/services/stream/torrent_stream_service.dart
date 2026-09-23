@@ -66,6 +66,39 @@ class TorrentStreamService {
   /// Latest torrent update snapshots keyed by infohash.
   final Map<String, TorrentInfo> _latestUpdates = {};
 
+  /// Torrents in use by something other than the in-app player (the LAN web
+  /// player). [cleanup] leaves these alone so closing the player doesn't cut
+  /// off a browser that's still watching.
+  final Set<String> _pinned = {};
+
+  /// Returns the 40-char hex infohash in a magnet, a TorrServer stream URL
+  /// (`link=`), or a bare hash; null if none found.
+  static String? hashOf(String magnetOrUrl) {
+    final match = _hashRegExp.firstMatch(magnetOrUrl);
+    return match?.group(0)?.toLowerCase();
+  }
+
+  void pin(String hash) => _pinned.add(hash.toLowerCase());
+
+  /// Unpins a torrent and drops it from RAM unless the in-app player or a
+  /// download still needs it.
+  Future<void> release(String hash, {bool drop = true}) async {
+    final h = hash.toLowerCase();
+    _pinned.remove(h);
+    if (!drop) return;
+    for (final task in DownloadService.instance.tasksNotifier.value) {
+      if (task.isDownloading || task.status == DownloadStatus.queued) {
+        for (final v in [task.infoHash, task.magnet, task.rawUrl]) {
+          if (v != null && _extractHash(v) == h) return;
+        }
+      }
+    }
+    try {
+      if (_controller.isRunning) await _controller.dropTorrent(h);
+    } catch (_) {}
+    _activeTorrents.remove(h);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Lifecycle
   // ─────────────────────────────────────────────────────────────────────────
@@ -365,7 +398,7 @@ class TorrentStreamService {
     }
 
     for (final hash in List<String>.from(_activeTorrents)) {
-      if (downloadingHashes.contains(hash.toLowerCase())) {
+      if (downloadingHashes.contains(hash.toLowerCase()) || _pinned.contains(hash.toLowerCase())) {
         continue;
       }
       try {
@@ -374,7 +407,8 @@ class TorrentStreamService {
         }
       } catch (_) {}
     }
-    _activeTorrents.removeWhere((h) => !downloadingHashes.contains(h.toLowerCase()));
+    _activeTorrents.removeWhere(
+        (h) => !downloadingHashes.contains(h.toLowerCase()) && !_pinned.contains(h.toLowerCase()));
     _log('TorrentStreamService cleanup completed.');
   }
 

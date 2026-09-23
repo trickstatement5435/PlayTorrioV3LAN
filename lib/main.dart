@@ -27,6 +27,7 @@ import './services/music/music_settings.dart';
 import './services/music/qobuz_music_service.dart';
 import './services/my_list/my_list_service.dart';
 import './services/stream/torrent_stream_service.dart';
+import './services/web_ui/web_ui_server.dart';
 import './services/player/player_settings.dart';
 import './services/download/download_service.dart';
 import './services/config/env_service.dart';
@@ -73,6 +74,9 @@ void main() async {
     DiscordRpcService.instance.initialize(),
     BuiltinProvidersSettingsService.instance.init(),
   ]);
+  // Browser player for other devices on the home network (Settings > Web Player).
+  // Not awaited so a slow network adapter can't delay app startup.
+  WebUiServer.instance.init();
   runApp(const PlayTorrioApp());
 }
 

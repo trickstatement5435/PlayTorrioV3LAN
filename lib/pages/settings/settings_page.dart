@@ -20,6 +20,8 @@ import 'simkl_settings_page.dart';
 import 'updates_settings_page.dart';
 import 'about_settings_page.dart';
 import 'support_dev_settings_page.dart';
+import 'web_ui_settings_page.dart';
+import '../../services/web_ui/web_ui_server.dart';
 import '../../services/player/player_settings.dart';
 import '../../services/p2p/p2p_settings_service.dart';
 import '../../services/scraper/builtin_providers_settings_service.dart';
@@ -468,6 +470,26 @@ class _SettingsPageState extends State<SettingsPage> {
                         ? Colors.white38
                         : const Color(0xFF7C5CFF),
                     onTap: () => _navigateTo(const VideoSettingsPage()),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              // Web Player (watch on other devices in a browser)
+              ValueListenableBuilder<WebUiStatus>(
+                valueListenable: WebUiServer.instance.status,
+                builder: (context, web, _) {
+                  return _SettingsCategoryTile(
+                    icon: Icons.connected_tv_rounded,
+                    iconColor: const Color(0xFF7C5CFF),
+                    title: 'Web Player',
+                    subtitle: 'Browse and watch from a browser on another computer, phone or TV',
+                    badgeText: web.running
+                        ? (web.activeStreams > 0 ? 'Streaming' : 'On')
+                        : 'Off',
+                    badgeColor: web.running ? const Color(0xFF10B981) : Colors.white38,
+                    onTap: () => _navigateTo(const WebUiSettingsPage()),
                   );
                 },
               ),
