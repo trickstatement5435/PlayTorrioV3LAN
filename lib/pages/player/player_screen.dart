@@ -45,6 +45,8 @@ import '../../widgets/player/text_sync_overlay.dart';
 import '../../models/download/download_task_model.dart';
 import '../../services/download/download_service.dart';
 import '../../utils/download/download_path_helper.dart';
+import '../../services/lan_cast/lan_cast_service.dart';
+import '../../widgets/player/lan_cast_dialog.dart';
 
 class PlayerScreen extends StatefulWidget {
   final StreamSource source;
@@ -182,6 +184,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   String? _sourcesErrorMessage;
   final Map<String, List<StreamSource>> _cachedSourcesByEpisode = {};
   String? _activeStreamUrl;
+  Map<String, String> _activeStreamHeaders = const {};
   bool _wasFullscreenBeforeEntering = false;
 
   @override
@@ -290,6 +293,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (rawUrl != null && (File(rawUrl).existsSync() || _currentSource.name == 'Downloaded')) {
         print('[PlayerScreen] Initializing offline local file playback: $rawUrl');
         _activeStreamUrl = rawUrl;
+        _activeStreamHeaders = const {};
+        _syncLanCastSource();
         await PlayerSettings.applyPreOpenProperties(_player);
         await _player.open(Media(rawUrl), play: true);
         await PlayerSettings.applyPostOpenProperties(_player);
@@ -383,6 +388,16 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       final cleanUri = Uri.parse(sanitizedUrlStr);
       _activeStreamUrl = sanitizedUrlStr;
+      // TorrServer runs on 127.0.0.1 with a random free port; it needs no
+      // CDN headers (the player skips them for torrents too).
+      final streamHost = cleanUri.host.toLowerCase();
+      final isLocalTorrentUrl = streamHost == '127.0.0.1' ||
+          streamHost == 'localhost' ||
+          sanitizedUrlStr.contains(':8090') ||
+          sanitizedUrlStr.contains('/stream?link=') ||
+          sanitizedUrlStr.contains('/stream?');
+      _activeStreamHeaders = isLocalTorrentUrl ? const {} : Map<String, String>.from(playerHeaders);
+      _syncLanCastSource();
       print('[PlayerScreen] Opening direct network stream URL: $cleanUri (headers: ${playerHeaders.keys})');
 
       if (!mounted) return;
@@ -1386,6 +1401,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _bufferNotifier.dispose();
     _player.dispose();
     _logoAnimController.dispose();
+    // The torrent/source is torn down with the player, so the LAN share goes too.
+    LanCastService.instance.stop();
     TorrentStreamService().cleanup();
     if (!_wasFullscreenBeforeEntering && WindowService.instance.isFullscreen) {
       WindowService.instance.exitFullscreen();
@@ -1832,6 +1849,47 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  /// Keeps an active LAN share pointed at whatever the player is playing now
+  /// (e.g. after switching episode or source). Same URL, so VLC just reconnects.
+  void _syncLanCastSource() {
+    final url = _activeStreamUrl;
+    if (url == null || !LanCastService.instance.isRunning) return;
+    unawaited(LanCastService.instance.updateSource(url, _activeStreamHeaders, _lanCastTitle()));
+  }
+
+  String _lanCastTitle() {
+    final base = widget.detail?.name ?? _currentTitle;
+    final ep = _currentEpisode;
+    if (ep == null) return base;
+    return '$base S${(ep.season ?? 1).toString().padLeft(2, '0')}E${(ep.episode ?? 1).toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _openLanCast() async {
+    final url = _activeStreamUrl;
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nothing is playing yet.'), duration: Duration(seconds: 2)),
+      );
+      return;
+    }
+    _hideTimer?.cancel();
+    await showLanCastDialog(
+      context,
+      sourceUrl: url,
+      headers: _activeStreamHeaders,
+      title: _lanCastTitle(),
+      positionProvider: () => _player.state.position,
+      audioTrackProvider: () => _selectedAudioTrackIndex > 0 ? _selectedAudioTrackIndex : null,
+      onPauseLocal: () {
+        if (mounted && _player.state.playing) _player.pause();
+      },
+    );
+    if (mounted) {
+      setState(() {});
+      _startHideControlsTimer();
+    }
+  }
+
   void _handleCopyStreamUrl() {
     final url = _activeStreamUrl ?? _currentSource.url;
     if (url != null && url.isNotEmpty) {
@@ -1976,6 +2034,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       onDownload: (_isLoading || isOfflineFile) ? null : _handleDownloadMedia,
                       isDownloading: isDownloading,
                       onCopyStreamUrl: _isLoading ? null : _handleCopyStreamUrl,
+                      onCast: _isLoading ? null : _openLanCast,
+                      isCasting: LanCastService.instance.isRunning,
                       onLock: _isMobile ? _lockPlayer : null,
                       onToggleEpisodes: (!_isLoading && widget.detail?.videos.isNotEmpty == true)
                           ? _toggleEpisodesPanel

@@ -66,6 +66,15 @@ For torrents, there's a built-in BitTorrent client (native `libtorrent` bindings
 
 You can also install any Stremio-compatible addon (Torrentio, etc.) by pasting its URL in settings.
 
+### Stream to LAN (open in VLC on another device)
+
+While something is playing, hit the **cast** button in the player's top bar. PlayTorrio starts a small HTTP server on your network and gives you a URL like `http://192.168.1.20:8766/k3m9x2ab/stream.ts`. On any other device on the same Wi-Fi/LAN, open VLC → **Media → Open Network Stream** and paste it.
+
+- **Original**: sends the exact file the app is playing (no re-encode, VLC can seek). Works on every platform.
+- **480p / 720p / 1080p / 1080p+ / Custom (0.5–40 Mbps)**: re-encoded live with FFmpeg to H.264 + AAC in MPEG-TS at that bitrate, using the audio track picked in the player. Each device that connects starts at your current position. Desktop only, needs `ffmpeg` on PATH (or set its path under *Advanced*).
+- The URL includes a random token and the server stops when you close the player.
+- Windows/macOS may ask to allow incoming connections the first time; allow it on private networks.
+
 ### Anime
 
 Dedicated anime section with 13 source extractors. Same scraping flow as movies/TV but with anime-specific sites.

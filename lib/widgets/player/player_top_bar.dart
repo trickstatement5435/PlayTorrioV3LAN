@@ -12,6 +12,7 @@ class PlayerTopBar extends StatelessWidget {
   final VoidCallback? onScreenshot;
   final VoidCallback? onToggleAspect;
   final VoidCallback? onCast;
+  final bool isCasting;
   final VoidCallback? onDownload;
   final bool isDownloading;
   final VoidCallback? onCopyStreamUrl;
@@ -28,6 +29,7 @@ class PlayerTopBar extends StatelessWidget {
     this.onScreenshot,
     this.onToggleAspect,
     this.onCast,
+    this.isCasting = false,
     this.onDownload,
     this.isDownloading = false,
     this.onCopyStreamUrl,
@@ -262,9 +264,14 @@ class PlayerTopBar extends StatelessWidget {
                 PlayerIconButton(
                   size: 40,
                   iconSize: 20,
-                  icon: const Icon(Icons.cast_rounded),
-                  tooltip: 'Cast',
-                  backgroundColor: const Color(0x22080C12),
+                  icon: Icon(
+                    isCasting ? Icons.cast_connected_rounded : Icons.cast_rounded,
+                    color: isCasting ? const Color(0xFF10B981) : null,
+                  ),
+                  tooltip: isCasting ? 'Streaming to LAN' : 'Stream to LAN (VLC)',
+                  backgroundColor: isCasting
+                      ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                      : const Color(0x22080C12),
                   onPressed: onCast,
                 ),
             ],
