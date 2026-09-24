@@ -21,6 +21,8 @@ Added a webUI, but you can also stream within the app and use the link in VLC. A
 
 Just click "Cast" in settings to get your webUI link, or click the cast icon while watching something within the regular app to get VLC/MPV/Whatever link. 
 
+Keep in mind this is all vibe coded, I did not do a single lick of coding. Sorry if that's hard to hear, but this was just something I wanted to add for personal use and decided to share it hear. Go crazy with the code, I'm sure it's not the best considering it's clanker-coded, but don't blame me if it's ass.
+
 
 ## What is this?
 
