@@ -5,7 +5,7 @@
 <h1 align="center">PlayTorrio V3 (With WebUI and LAN Support)</h1>
 
 <p align="center">
-  Movies, TV, Anime, Manga, Audiobooks, Music — one app, no subscriptions.
+  Movies, TV, Anime, Manga, Audiobooks, Music — one app, no subscriptions. Original code by ayman708-UX
 </p>
 
 <p align="center">
@@ -23,6 +23,7 @@ Just click "Cast" in settings to get your webUI link, or click the cast icon whi
 
 Keep in mind this is all vibe coded, I did not do a single lick of coding. Sorry if that's hard to hear, but this was just something I wanted to add for personal use and decided to share it hear. Go crazy with the code, I'm sure it's not the best considering it's clanker-coded, but don't blame me if it's ass.
 
+But show support to the original creator: ayman708-UX 
 
 ## What is this?
 
