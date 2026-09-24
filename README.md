@@ -15,6 +15,12 @@
 </p>
 
 ---
+## What I changed?
+
+Added a webUI, but you can also stream within the app and use the link in VLC. App now hosts over local wifi, but seeding should remain within the host computer, so as long as your LAN is visible while using a VPN you should be fine. 
+
+Just click "Cast" in settings to get your webUI link, or click the cast icon while watching something within the regular app to get VLC/MPV/Whatever link. 
+
 
 ## What is this?
 
