@@ -2,7 +2,7 @@
   <img src="assets/icon.png" alt="PlayTorrio" width="140"/>
 </p>
 
-<h1 align="center">PlayTorrio V3</h1>
+<h1 align="center">PlayTorrio V3 (With WebUI and LAN Support)</h1>
 
 <p align="center">
   Movies, TV, Anime, Manga, Audiobooks, Music — one app, no subscriptions.
